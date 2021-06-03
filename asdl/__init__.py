@@ -19,6 +19,7 @@
 # [1] "The Zephyr Abstract Syntax Description Language" by Wang, et. al. See
 #     http://asdl.sourceforge.net/
 #-------------------------------------------------------------------------------
+from __future__ import annotations
 from collections import namedtuple
 import re
 
@@ -32,44 +33,44 @@ __all__ = [
 # parsed. This module parses ASDL files and uses a simple AST to represent them.
 # See the EBNF at the top of the file to understand the logical connection
 # between the various node types.
+from dataclasses import dataclass, field
+from abc import ABCMeta, abstractmethod
 
 builtin_types = {'identifier', 'string', 'int', 'constant'}
 
-class AST:
-    def __repr__(self):
-        raise NotImplementedError
+@dataclass
+class AST(metaclass=ABCMeta):
+    pass
 
+@dataclass
 class Module(AST):
-    def __init__(self, name, dfns):
-        self.name = name
-        self.dfns = dfns
-        self.types = {type.name: type.value for type in dfns}
+    name: str
+    dfns: list[Type]
+    types: dict[str, Type] = field(init=False, repr=False)
 
-    def __repr__(self):
-        return 'Module({0.name}, {0.dfns})'.format(self)
+    def __post_init__(self):
+        self.types = {type.name: type.value for type in self.dfns}
 
+@dataclass
 class Type(AST):
-    def __init__(self, name, value):
-        self.name = name
-        self.value = value
+    name: str
+    value: AST
 
-    def __repr__(self):
-        return 'Type({0.name}, {0.value})'.format(self)
-
+@dataclass
 class Constructor(AST):
-    def __init__(self, name, fields=None):
-        self.name = name
-        self.fields = fields or []
+    name: str
+    fields: list[Field] = field(default_factory=list)
 
-    def __repr__(self):
-        return 'Constructor({0.name}, {0.fields})'.format(self)
+    def __post_init__(self):
+        if self.fields is None:
+            self.fields = []
 
+@dataclass
 class Field(AST):
-    def __init__(self, type, name=None, seq=False, opt=False):
-        self.type = type
-        self.name = name
-        self.seq = seq
-        self.opt = opt
+    type: Type
+    name: str = None
+    seq: bool = False
+    opt: bool = False
 
     def __str__(self):
         if self.seq:
@@ -81,39 +82,23 @@ class Field(AST):
 
         return "{}{} {}".format(self.type, extra, self.name)
 
-    def __repr__(self):
-        if self.seq:
-            extra = ", seq=True"
-        elif self.opt:
-            extra = ", opt=True"
-        else:
-            extra = ""
-        if self.name is None:
-            return 'Field({0.type}{1})'.format(self, extra)
-        else:
-            return 'Field({0.type}, {0.name}{1})'.format(self, extra)
-
+@dataclass
 class Sum(AST):
-    def __init__(self, types, attributes=None):
-        self.types = types
-        self.attributes = attributes or []
+    types: list[Constructor]
+    attributes: list[Field] = field(default_factory=list)
 
-    def __repr__(self):
-        if self.attributes:
-            return 'Sum({0.types}, {0.attributes})'.format(self)
-        else:
-            return 'Sum({0.types})'.format(self)
+    def __post_init__(self):
+        if self.attributes is None:
+            self.attributes = []
 
+@dataclass
 class Product(AST):
-    def __init__(self, fields, attributes=None):
-        self.fields = fields
-        self.attributes = attributes or []
+    fields: list[Field]
+    attributes: list[Field] = field(default_factory=list)
 
-    def __repr__(self):
-        if self.attributes:
-            return 'Product({0.fields}, {0.attributes})'.format(self)
-        else:
-            return 'Product({0.fields})'.format(self)
+    def __post_init__(self):
+        if self.attributes is None:
+            self.attributes = []
 
 # A generic visitor for the meta-AST that describes ASDL. This can be used by
 # emitters. Note that this visitor does not provide a generic visit method, so a
