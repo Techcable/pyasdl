@@ -12,7 +12,7 @@
 # type          ::= product | sum
 # product       ::= fields ["attributes" fields]
 # fields        ::= "(" { field, "," } field ")"
-# field         ::= TypeId ["?" | "*"] [Id]
+# field         ::= TypeId { "?" | "*" } [Id]
 # sum           ::= constructor { "|" constructor } ["attributes" fields]
 # constructor   ::= ConstructorId [fields]
 #
@@ -22,6 +22,7 @@
 from __future__ import annotations
 from collections import namedtuple
 import re
+import enum
 
 __all__ = [
     'builtin_types', 'parse', 'AST', 'Module', 'Type', 'Constructor',
@@ -65,20 +66,41 @@ class Constructor(AST):
         if self.fields is None:
             self.fields = []
 
+class Quantifier(enum.Enum):
+    OPTIONAL = "?"
+    SEQUENCE = "*"
+
+    @classmethod
+    def from_token_kind(cls, token: TokenKind):
+        match token:
+            case TokenKind.Question:
+                return Quantifier.OPTIONAL
+            case TokenKind.Asterisk:
+                return Quantifier.SEQUENCE
+            case _:
+                raise ValueError(f"Unsupported token kind {token!r}")
+
+
 @dataclass
 class Field(AST):
     type: Type
     name: str = None
-    seq: bool = False
-    opt: bool = False
+    quantifiers: list[Quantifier] = field(default_factory=list)
+
+    @property
+    def seq(self) -> bool:
+        return Quantifier.SEQUENCE in self.quantifiers
+
+    @property
+    def opt(self) -> bool:
+        return Quantifier.SEQUENCE in self.quantifiers
 
     def __str__(self):
-        if self.seq:
-            extra = "*"
-        elif self.opt:
-            extra = "?"
-        else:
-            extra = ""
+        extra = ""
+        # Want to add quantifiers in declaration order
+        for quant in Quantifier:
+            if quant in self.quantifiers:
+                extra += quant.value
 
         return "{}{} {}".format(self.type, extra, self.name)
 
@@ -299,10 +321,10 @@ class ASDLParser:
         self._match(TokenKind.LParen)
         while self.cur_token.kind == TokenKind.TypeId:
             typename = self._advance()
-            is_seq, is_opt = self._parse_optional_field_quantifier()
+            quantifiers = self._parse_optional_field_quantifier()
             id = (self._advance() if self.cur_token.kind in self._id_kinds
                                   else None)
-            fields.append(Field(typename, id, seq=is_seq, opt=is_opt))
+            fields.append(Field(typename, id, quantifiers=quantifiers))
             if self.cur_token.kind == TokenKind.RParen:
                 break
             elif self.cur_token.kind == TokenKind.Comma:
@@ -324,14 +346,13 @@ class ASDLParser:
             return None
 
     def _parse_optional_field_quantifier(self):
-        is_seq, is_opt = False, False
-        if self.cur_token.kind == TokenKind.Asterisk:
-            is_seq = True
+        quantifiers = []
+        while self.cur_token.kind in (TokenKind.Asterisk, TokenKind.Question):
+            quant = Quantifier.from_token_kind(self.cur_token.kind)
+            assert quant not in quantifiers, f"Duplicate quanitfier {quant}"
+            quantifiers.append(quant)
             self._advance()
-        elif self.cur_token.kind == TokenKind.Question:
-            is_opt = True
-            self._advance()
-        return is_seq, is_opt
+        return quantifiers
 
     def _advance(self):
         """ Return the value of the current token and read the next one into
