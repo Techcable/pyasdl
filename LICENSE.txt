@@ -1,3 +1,3 @@
 The ASDL code originally comes from CPython. It is licensed under the Python license (included in PYTHON-LICENSE.txt).
 
-All modifications since then must be licensed under either the same conditions or a similarly-permissive OSI-approved license.
+All of my modifications since then are be licensed under either the same conditions.
